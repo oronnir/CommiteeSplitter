@@ -41,4 +41,4 @@ def get_reviewers(n_papers, n_people, m_reviews_per_paper, fname):
 
 
 if __name__ == '__main__':
-    get_reviewers(8, 4, 2, r"C:\CommitteeSplitter\data\input.csv")
+    get_reviewers(100, 25, 2, r"C:\CommitteeSplitter\data\input.csv")
