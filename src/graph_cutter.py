@@ -42,7 +42,7 @@ class GraphCutter:
         return cut_weight
 
     def _init_cost_node_to_partition(self, num_cuts: int, partitions: list[nx.Graph], node_to_id_map: dict):
-        cost_node_to_partition = np.zeros((len(self.graph.nodes), num_cuts))
+        cost_node_to_partition = np.zeros((len(self.graph.nodes), num_cuts), dtype=int)
         node_to_partition_map = {}
         for p, partition in enumerate(partitions):
             for node in partition.nodes:
@@ -50,6 +50,7 @@ class GraphCutter:
 
         for edge in self.graph.edges:
             cost_node_to_partition[node_to_id_map[edge[0]], node_to_partition_map[edge[1]]] += self.graph[edge[0]][edge[1]]['weight']
+            cost_node_to_partition[node_to_id_map[edge[1]], node_to_partition_map[edge[0]]] += self.graph[edge[0]][edge[1]]['weight']
 
         return cost_node_to_partition, node_to_partition_map
 
@@ -63,18 +64,19 @@ class GraphCutter:
 
         # init by randomly assigning nodes to partitions in a balanced way
         partitions = [nx.Graph() for _ in range(num_cuts)]
-        for i, node in enumerate(self.graph.nodes):
+        for i, node in enumerate(nodes):
             partitions[i % num_cuts].add_node(node)
 
-        return partitions, node_to_id_map, id_to_node_map
+        return partitions, node_to_id_map, id_to_node_map, nodes
 
     def cut(self, num_cuts, convergence_count=50) -> list[nx.Graph]:
         """
         Cut the graph into num_splits partitions while minimizing the cut cost.
         :return: self.num_splits partitions
         """
+        exploration_prob = 0.5
         convergence_counter = convergence_count
-        partitions, node_to_id_map, id_to_node_map = self._init_partition(num_cuts)
+        partitions, node_to_id_map, id_to_node_map, nodes = self._init_partition(num_cuts)
 
         # iteratively move nodes between partitions to minimize cut cost
         it = 0
@@ -83,38 +85,49 @@ class GraphCutter:
 
             # pick two random partitions without replacement
             from_partition, to_partition = np.random.choice(num_cuts, 2, replace=False)
-            swap_weights = cost_node_to_partition[:, from_partition] - cost_node_to_partition[:, to_partition]
+            swap_weights = cost_node_to_partition[:, to_partition] - cost_node_to_partition[:, from_partition]
 
             # mask from partition nodes
-            mask_from = np.zeros(len(self.graph.nodes), dtype=bool)
-            mask_from[[node_to_id_map[node] for node in partitions[from_partition].nodes]] = True
+            mask_from = np.ones(len(nodes), dtype=bool)
+            mask_from[[node_to_id_map[node] for node in partitions[from_partition].nodes]] = False
             masked_swap_from = np.ma.masked_array(swap_weights, mask_from, dtype=int)
 
             # mask to partition nodes
-            mask_to = np.zeros(len(self.graph.nodes), dtype=bool)
-            mask_to[[node_to_id_map[node] for node in partitions[to_partition].nodes]] = True
+            mask_to = np.ones(len(nodes), dtype=bool)
+            mask_to[[node_to_id_map[node] for node in partitions[to_partition].nodes]] = False
             masked_swap_to = np.ma.masked_array(swap_weights, mask_to, dtype=int)
 
             # calculate the current cost on crossing the partitions
             current_cost = self.graph_cut_loss(partitions)
             print(f'Iteration {it + 1}/{self.num_iterations}; Total Cut Cost: {current_cost}')
 
-            # find the node with the highest cost to partition and swap it with the node with the highest cost from
-            # partition so the cost is minimized and the partitions are kept balanced
-            max_cost_node = np.ma.argmax(masked_swap_from)
-            min_cost_node = np.ma.argmin(masked_swap_to)
+            if np.random.rand() < exploration_prob:
+                # randomly swap nodes between partitions
+                to_swap_ind = np.random.choice([node_to_id_map[node] for node in partitions[to_partition].nodes])
+                from_swap_ind = np.random.choice([node_to_id_map[node] for node in partitions[from_partition].nodes])
+            else:
+                # find the node with the highest cost to partition and swap it with the node with the highest cost from
+                # partition so the cost is minimized and the partitions are kept balanced
+                to_swap_ind = np.ma.argmin(masked_swap_to)
+                from_swap_ind = np.ma.argmax(masked_swap_from)
 
-            if swap_weights[max_cost_node] - swap_weights[min_cost_node] > 0:
-                partitions[to_partition].remove_node(id_to_node_map[max_cost_node])
-                partitions[from_partition].add_node(id_to_node_map[max_cost_node])
-                partitions[from_partition].remove_node(id_to_node_map[min_cost_node])
-                partitions[to_partition].add_node(id_to_node_map[min_cost_node])
+            # swap criteria
+            gain = swap_weights[from_swap_ind] - swap_weights[to_swap_ind]
+            if gain > 0:
+                partitions[from_partition].remove_node(id_to_node_map[from_swap_ind])
+                partitions[to_partition].add_node(id_to_node_map[from_swap_ind])
+                partitions[to_partition].remove_node(id_to_node_map[to_swap_ind])
+                partitions[from_partition].add_node(id_to_node_map[to_swap_ind])
                 convergence_counter = convergence_count
             else:
                 convergence_counter -= 1
                 if convergence_counter == 0:
                     break
         print(f'Converged after {it+1} iterations. Into {num_cuts} partitions.')
+        print(f'The partitions are: {[p.nodes for p in partitions]}')
+        print(f'The cut cost is: {current_cost}')
+        if len(self.graph.nodes) < 10:
+            print(f'The Cost matrix is:\n{nx.to_numpy_array(self.graph)}')
         return partitions
 
     @staticmethod
