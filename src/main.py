@@ -4,14 +4,15 @@ from src.graph_cutter import GraphCutter
 
 def run_graph_cut_main():
     input_data_path = '../data/input.csv'
-    output_data_path = 'graph_cut.pkl'
+    input_data_path = r"C:\CommitteeData\assignmentsTPC.csv"
+    output_data_path = 'graph_cut.json'
 
     # load data
     graph, singletons = load_graph(input_data_path)
 
     # cut graph
     cutter = GraphCutter(graph, num_iterations=10000)
-    cut = cutter.cut(2)
+    cut = cutter.cut(4)
 
     # print cut cost
     total_cut_cost = cutter.graph_cut_loss(cut)

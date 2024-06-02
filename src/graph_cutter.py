@@ -58,7 +58,7 @@ class GraphCutter:
         if num_cuts < 2:
             raise ValueError("num_splits must be at least 2")
 
-        nodes = sorted(self.graph.nodes, key=lambda n: int(n[1:]))
+        nodes = sorted(self.graph.nodes, key=lambda n: int(n[1:]) if n[1:].isnumeric() else n)
         node_to_id_map = {node: i for i, node in enumerate(nodes)}
         id_to_node_map = {i: node for i, node in enumerate(nodes)}
 
@@ -127,6 +127,8 @@ class GraphCutter:
                 if actual_swap_drop <= 0:
                     # undo the swap if the cost is not reduced
                     partitions = self._swap(partitions, from_partition, to_partition, to_swap_ind, from_swap_ind, id_to_node_map)
+                else:
+                    convergence_counter = convergence_count
             else:
                 convergence_counter -= 1
                 if convergence_counter == 0:

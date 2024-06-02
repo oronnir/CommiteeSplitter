@@ -34,7 +34,7 @@ def read_assignments(fname):
         reviewers.add(pri)
         reviewers.add(sec)
         papers[pid] = (pri, sec)
-    reviewers = sorted(reviewers, key=lambda r: int(r[1:]))
+    reviewers = sorted(reviewers, key=lambda r: int(r[1:]) if r[1:].isnumeric() else r)
     return reviewers, papers, singles
 
 
