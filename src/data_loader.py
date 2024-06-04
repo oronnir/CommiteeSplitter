@@ -60,6 +60,8 @@ def make_graph_from_paper_reviews(reviewers, papers):
 def load_graph(file_path: str):
     print(f'Reading {file_path} ...')
     reviewers, papers, singles = read_assignments(file_path)
+    if len(singles) > 0:
+        print(f'Warning: {len(singles)} papers have only one reviewer.')
     print('Input reviewers and papers:', len(reviewers), len(papers))
     graph = make_graph_from_paper_reviews(reviewers, papers)
-    return graph, singles
+    return graph, singles, reviewers, papers

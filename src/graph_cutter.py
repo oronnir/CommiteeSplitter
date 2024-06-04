@@ -1,12 +1,11 @@
 import json
 import numpy as np
 import networkx as nx
-
+from collections import Counter
 
 class GraphCutter:
-    def __init__(self, graph: nx.Graph, num_iterations: int = 100):
+    def __init__(self, graph: nx.Graph):
         self.graph = graph
-        self.num_iterations = num_iterations
 
     def graph_cut_loss(self, partitions: list[set]) -> float:
         """
@@ -77,18 +76,19 @@ class GraphCutter:
         partitions[from_partition].add(id_to_node_map[to_swap_ind])
         return partitions
 
-    def cut(self, num_cuts, convergence_count=50) -> list[set]:
+    def cut(self, num_cuts, num_iterations, convergence_count=500, exploration_prob=0.5) -> list[set]:
         """
         Cut the graph into num_splits partitions while minimizing the cut cost.
         :return: self.num_splits partitions
         """
-        exploration_prob = 0.5
+        print(f'Starting graph cut with {num_cuts} partitions, {num_iterations} iterations and exploration probability of {exploration_prob}.')
         convergence_counter = convergence_count
         partitions, node_to_id_map, id_to_node_map, nodes = self._init_partition(num_cuts)
 
         # iteratively move nodes between partitions to minimize cut cost
         it = 0
-        for it in range(self.num_iterations):
+        current_cost = np.inf
+        for it in range(num_iterations):
             cost_node_to_partition, node_to_partition_map = self._init_cost_node_to_partition(num_cuts, partitions, node_to_id_map)
 
             # pick two random partitions without replacement
@@ -107,7 +107,7 @@ class GraphCutter:
 
             # calculate the current cost on crossing the partitions
             current_cost = self.graph_cut_loss(partitions)
-            print(f'Iteration {it + 1}/{self.num_iterations}; Total Cut Cost: {current_cost}')
+            print(f'Iteration {it + 1}/{num_iterations}; Total Cut Cost: {current_cost}')
 
             if np.random.rand() < exploration_prob:
                 # randomly swap nodes between partitions
@@ -140,17 +140,33 @@ class GraphCutter:
             print(f'The Cost matrix is:\n{nx.to_numpy_array(self.graph)}')
         return partitions
 
-    @staticmethod
-    def save(filepath: str, cuts: list[set]):
+    def save(self, filepath: str, cuts: list[set], papers: dict):
         """
         Save the graph cut to a file.
         :param filepath: the path the file will be saved to
         :param cuts: the cuts to save
+        :param papers: papers to reviewers map
         :return: None
         """
         reviewer_to_room_map = {node: i for i, cut in enumerate(cuts) for node in cut}
-        with open(filepath, 'wb') as file:
+        with open(filepath, 'w') as file:
             json.dump(reviewer_to_room_map, file)
+
+        # reviewer to room assignment CSV
+        with open(filepath.replace('.json', '_people_rooms.csv'), 'w') as file:
+            file.write('Reviewer,Room\n')
+            for reviewer, room in reviewer_to_room_map.items():
+                file.write(f'{reviewer},{room}\n')
+
+        # paper to room assignment map putting a paper in the room of the most reviewers assigned to
+
+        paper_to_room_map = {paper: Counter([reviewer_to_room_map[r] for r in reviewers_tup]).most_common(1)[0][0] for paper, reviewers_tup in papers.items()}
+
+        # paper to room assignment CSV
+        with open(filepath.replace('.json', '_paper_rooms.csv'), 'w') as file:
+            file.write('Paper,Room\n')
+            for paper, room in paper_to_room_map.items():
+                file.write(f'{paper},{room}\n')
 
     def __str__(self):
         return f"GraphCutter(graph={self.graph})"
