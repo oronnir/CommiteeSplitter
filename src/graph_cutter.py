@@ -1,4 +1,6 @@
 import json
+import random
+
 import numpy as np
 import networkx as nx
 from collections import Counter
@@ -56,8 +58,8 @@ class GraphCutter:
     def _init_partition(self, num_cuts: int):
         if num_cuts < 2:
             raise ValueError("num_splits must be at least 2")
-
-        nodes = sorted(self.graph.nodes, key=lambda n: int(n[1:]) if n[1:].isnumeric() else n)
+        nodes = sorted(self.graph.nodes, key=lambda n: random.randint(0, 1000))
+        # nodes = sorted(self.graph.nodes, key=lambda n: int(n[1:]) if n[1:].isnumeric() else n)
         node_to_id_map = {node: i for i, node in enumerate(nodes)}
         id_to_node_map = {i: node for i, node in enumerate(nodes)}
 
