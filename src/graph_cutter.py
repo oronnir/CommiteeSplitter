@@ -5,6 +5,7 @@ import numpy as np
 import networkx as nx
 from collections import Counter
 
+
 class GraphCutter:
     def __init__(self, graph: nx.Graph):
         self.graph = graph
@@ -55,9 +56,19 @@ class GraphCutter:
 
         return cost_node_to_partition, node_to_partition_map
 
-    def _init_partition(self, num_cuts: int):
+    def _init_partition(self, num_cuts: int, init_guess: dict):
         if num_cuts < 2:
             raise ValueError("num_splits must be at least 2")
+
+        if init_guess is not None:
+            partitions = [set() for _ in range(num_cuts)]
+            for node, group in init_guess.items():
+                partitions[group].add(node)
+            nodes = sorted(self.graph.nodes, key=lambda n: init_guess[n])
+            node_to_id_map = {node: i for i, node in enumerate(nodes)}
+            id_to_node_map = {i: node for i, node in enumerate(nodes)}
+            return partitions, node_to_id_map, id_to_node_map, nodes
+
         nodes = sorted(self.graph.nodes, key=lambda n: random.randint(0, 1000))
         # nodes = sorted(self.graph.nodes, key=lambda n: int(n[1:]) if n[1:].isnumeric() else n)
         node_to_id_map = {node: i for i, node in enumerate(nodes)}
@@ -78,18 +89,20 @@ class GraphCutter:
         partitions[from_partition].add(id_to_node_map[to_swap_ind])
         return partitions
 
-    def cut(self, num_cuts, num_iterations, convergence_count=500, exploration_prob=0.5) -> list[set]:
+    def cut(self, num_cuts, num_iterations, init_guess, convergence_count=500, exploration_prob=0.5) -> list[set]:
         """
         Cut the graph into num_splits partitions while minimizing the cut cost.
         :return: self.num_splits partitions
         """
         print(f'Starting graph cut with {num_cuts} partitions, {num_iterations} iterations and exploration probability of {exploration_prob}.')
         convergence_counter = convergence_count
-        partitions, node_to_id_map, id_to_node_map, nodes = self._init_partition(num_cuts)
+        init_guess = init_guess if random.random() < 0.5 else None
+        partitions, node_to_id_map, id_to_node_map, nodes = self._init_partition(num_cuts, init_guess)
 
         # iteratively move nodes between partitions to minimize cut cost
         it = 0
         current_cost = np.inf
+        past_cost = current_cost
         for it in range(num_iterations):
             cost_node_to_partition, node_to_partition_map = self._init_cost_node_to_partition(num_cuts, partitions, node_to_id_map)
 
@@ -109,8 +122,11 @@ class GraphCutter:
 
             # calculate the current cost on crossing the partitions
             current_cost = self.graph_cut_loss(partitions)
-            print(f'Iteration {it + 1}/{num_iterations}; Total Cut Cost: {current_cost}')
+            if current_cost < past_cost:
+                print(f'\rIteration {it + 1}/{num_iterations}; Total Cut Cost: {current_cost}', end='')
+                past_cost = current_cost
 
+            # randomly swap nodes between partitions with probability exploration_prob to minimize the cut
             if np.random.rand() < exploration_prob:
                 # randomly swap nodes between partitions
                 to_swap_ind = np.random.choice([node_to_id_map[node] for node in partitions[to_partition]])
@@ -136,9 +152,9 @@ class GraphCutter:
                 if convergence_counter == 0:
                     break
         print(f'Converged after {it+1} iterations. Into {num_cuts} partitions.')
-        print(f'The partitions are: {[p for p in partitions]}')
-        print(f'The cut cost is: {current_cost}')
         if len(self.graph.nodes) < 10:
+            print(f'The cut cost is: {current_cost}')
+            print(f'The partitions are: {[p for p in partitions]}')
             print(f'The Cost matrix is:\n{nx.to_numpy_array(self.graph)}')
         return partitions
 
@@ -161,7 +177,6 @@ class GraphCutter:
                 file.write(f'{reviewer},{room}\n')
 
         # paper to room assignment map putting a paper in the room of the most reviewers assigned to
-
         paper_to_room_map = {paper: Counter([reviewer_to_room_map[r] for r in reviewers_tup]).most_common(1)[0][0] for paper, reviewers_tup in papers.items()}
 
         # paper to room assignment CSV
