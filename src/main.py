@@ -141,9 +141,10 @@ def serialize_two_step_results(first_step_groups, second_step_groups, nonconflic
         file.write(csv_col_names)
         for paper, (r1, r2) in conflicts_step2.items():
             # validate both reviewers are not in the same room
-            r1_room = step2_reviewer_to_group[r1]
-            r2_room = step2_reviewer_to_group[r2]
-            assert r1_room != r2_room
+            r1_room = step2_reviewer_to_group.get(r1, None)
+            r2_room = step2_reviewer_to_group.get(r2, None)
+            if r1_room is not None and r2_room is not None:
+                assert r1_room != r2_room
             file.write(f'{paper},{r1},{reviewer_name[r1]},{r2},{reviewer_name[r2]},{-1}\n')
 
     # write a CSV file with reviewer to room assignment stage 1
@@ -161,9 +162,48 @@ def serialize_two_step_results(first_step_groups, second_step_groups, nonconflic
             file.write(f'{reviewer},{reviewer_name[reviewer]},{room}\n')
 
 
+def update_with_low_score_papers(low_score_papers, nonconflicting_groups, nonconflicting_papers_to_groups):
+    valid_low_score_papers_to_exclude = set()
+    for paper, (r1, r2) in low_score_papers.items():
+        if paper in nonconflicting_papers_to_groups:
+            continue
+        group_id = -1
+        for g_idx, group in enumerate(nonconflicting_groups):
+            if r1 in group and r2 in group:
+                group_id = g_idx
+                break
+        if group_id != -1:
+            nonconflicting_papers_to_groups[paper] = (r1, r2)
+            nonconflicting_groups[group_id].add(r1)
+            nonconflicting_groups[group_id].add(r2)
+            valid_low_score_papers_to_exclude.add(paper)
+
+    num_valid_low_score_papers = len(valid_low_score_papers_to_exclude)
+    for paper in valid_low_score_papers_to_exclude:
+        del low_score_papers[paper]
+    print(f'Excluded {num_valid_low_score_papers} low score papers from the conflicting papers')
+    return low_score_papers, nonconflicting_groups, nonconflicting_papers_to_groups
+
+
+def update_conflicts_low_score_papers(second_conflicting_papers_to_reviewers, reviewers_to_names, low_score_papers):
+    print(f'Number of low score papers on the cut: {len(low_score_papers)}')
+    print(f'Number of high score papers on the cut: {len(second_conflicting_papers_to_reviewers)}')
+    for paper, (r1, r2) in low_score_papers.items():
+        if paper in second_conflicting_papers_to_reviewers:
+            continue
+        second_conflicting_papers_to_reviewers[paper] = (r1, r2)
+        if r1 not in reviewers_to_names:
+            reviewers_to_names[r1] = 'Low Score Reviewer'
+        if r2 not in reviewers_to_names:
+            reviewers_to_names[r2] = 'Low Score Reviewer'
+    return second_conflicting_papers_to_reviewers, reviewers_to_names
+
+
 def run_graph_cut_main():
     reviewer_metadata_xlsx_path = r"C:\CommitteeData\ReviewerAreas.xlsx"
-    input_data_path = r"C:\CommitteeData\reviewer_assignments_23-06-24_valid.csv"
+
+    # input_data_path = r"C:\CommitteeData\reviewer_assignments_23-06-24_valid.csv"
+    input_data_path = r"C:\CommitteeData\reviewer_assignments_scores_07-07-24.csv"
     first_step_folder = r'C:\CommitteeData\outputs\first_step'
     second_step_folder = r'C:\CommitteeData\outputs\second_step'
     final_output_path = r'C:\CommitteeData\outputs\final_output'
@@ -178,7 +218,7 @@ def run_graph_cut_main():
     reviewer_to_areas = {row['Reviewer']: row['Area'] for _, row in reviewer_metadata.iterrows()}
 
     # load data
-    graph, singletons, reviewers, papers = load_graph(input_data_path)
+    graph, singletons, reviewers, papers, low_score_papers = load_graph(input_data_path)
 
     # re-create a folder with all artifacts of the first stage
     recreate_folder(first_step_folder)
@@ -202,6 +242,11 @@ def run_graph_cut_main():
 
     # find conflicting papers
     second_conflicting_graph, second_conflicting_papers_to_reviewers, second_nonconflicting_groups, second_nonconflicting_papers_to_groups = find_graph_conflicts(conflicting_graph, conflicting_papers_to_reviewers, second_pass_best_cut_groups)
+
+    # update the final output objects with the low score papers
+    low_score_papers, nonconflicting_groups, nonconflicting_papers_to_groups = update_with_low_score_papers(low_score_papers, nonconflicting_groups, nonconflicting_papers_to_groups)
+    low_score_papers, second_nonconflicting_groups, second_nonconflicting_papers_to_groups = update_with_low_score_papers(low_score_papers, second_nonconflicting_groups, second_nonconflicting_papers_to_groups)
+    second_conflicting_papers_to_reviewers, reviewers_to_names = update_conflicts_low_score_papers(second_conflicting_papers_to_reviewers, reviewers_to_names, low_score_papers)
 
     # serialize the results
     recreate_folder(final_output_path)
